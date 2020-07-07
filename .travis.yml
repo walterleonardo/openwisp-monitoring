@@ -24,7 +24,6 @@ addons:
 
 services:
   - docker
-  - redis-server
 
 branches:
   only:
@@ -32,19 +31,23 @@ branches:
     - dev
 
 before_install:
-  - docker run -d --name influxdb -e INFLUXDB_DB=openwisp2 -p 8086:8086 influxdb:alpine
+  - docker-compose up -d
   - pip install -U pip wheel setuptools
   - pip install $DJANGO
   - pip install -U -r requirements-test.txt
 
 install:
-  - pip install -e .
+  - pip install -e .[influxdb,elasticsearch]
   - sh install-dev.sh
 
 script:
   - ./run-qa-checks
-  - SAMPLE_APP=1 coverage run --source=openwisp_monitoring runtests.py
-  - coverage run -a --source=openwisp_monitoring runtests.py
+  - SAMPLE_APP=1 coverage run -p --source=openwisp_monitoring runtests.py
+  - coverage run -p --source=openwisp_monitoring runtests.py
+  - elasticsearch=1 SAMPLE_APP=1 coverage run -p --source=openwisp_monitoring runtests.py
+  - elasticsearch=1 coverage run -p --source=openwisp_monitoring runtests.py
+  - coverage combine
+  - coverage report -m
 
 jobs:
   include:
