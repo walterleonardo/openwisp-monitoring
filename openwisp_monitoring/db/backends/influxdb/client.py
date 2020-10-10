@@ -11,6 +11,9 @@ from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
 from influxdb import InfluxDBClient
 from influxdb.exceptions import InfluxDBClientError
+from swapper import load_model
+
+from openwisp_monitoring.monitoring.signals import post_metric_write
 
 from ...exceptions import TimeseriesWriteException
 from .. import TIMESERIES_DB
@@ -109,15 +112,31 @@ class DatabaseClient(object):
         )
 
     def write(self, name, values, **kwargs):
+        tags = kwargs.get('tags')
         point = {
             'measurement': name,
-            'tags': kwargs.get('tags'),
+            'tags': tags,
             'fields': values,
         }
         timestamp = kwargs.get('timestamp') or now()
+        if tags and 'content_type' in tags and 'object_id' in tags:
+            from django.contrib.contenttypes.models import ContentType
+
+            ct = tags['content_type']
+            if isinstance(ct, str):
+                ct_app_label, ct_model = tags['content_type'].split('.')
+                ct = ContentType.objects.get(model=ct_model, app_label=ct_app_label).id
+            metric = (
+                load_model('monitoring', 'Metric')
+                .objects.filter(content_type=ct, object_id=tags['object_id'], key=name)
+                .first()
+            )
+        else:
+            metric = load_model('monitoring', 'Metric').objects.filter(key=name).first()
         if isinstance(timestamp, datetime):
-            timestamp = timestamp.isoformat(sep='T', timespec='microseconds')
-        point['time'] = timestamp
+            point['time'] = timestamp.isoformat(sep='T', timespec='microseconds')
+        else:
+            point['time'] = timestamp
         try:
             self.get_db.write(
                 {'points': [point]},
@@ -126,6 +145,16 @@ class DatabaseClient(object):
                     'rp': kwargs.get('retention_policy'),
                 },
             )
+            if metric:
+                signal_kwargs = dict(
+                    sender=metric.__class__,
+                    metric=metric,
+                    values=values,
+                    send_alert=kwargs.get('send_alert'),
+                    time=timestamp,
+                    rp=kwargs.get('retention_policy'),
+                )
+                post_metric_write.send(**signal_kwargs)
         except Exception as exception:
             logger.warning(f'got exception while writing to tsdb: {exception}')
             raise TimeseriesWriteException

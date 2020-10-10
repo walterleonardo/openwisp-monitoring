@@ -1,12 +1,16 @@
+from datetime import datetime
 from time import sleep
 
+import pytz
 from django.apps import AppConfig
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from requests.exceptions import ConnectionError
+from swapper import load_model
 
 from ..db import timeseries_db
 from .configuration import get_metric_configuration, register_metric_notifications
+from .signals import post_metric_write
 
 
 class MonitoringConfig(AppConfig):
@@ -22,6 +26,11 @@ class MonitoringConfig(AppConfig):
         metrics = get_metric_configuration()
         for metric_name, metric_config in metrics.items():
             register_metric_notifications(metric_name, metric_config)
+        post_metric_write.connect(
+            check_metric_threshold,
+            sender=load_model('monitoring', 'Metric'),
+            dispatch_uid='check_threshold',
+        )
 
     def create_database(self):
         # create Timeseries database if it doesn't exist yet
@@ -40,3 +49,13 @@ class MonitoringConfig(AppConfig):
             f'Retrying again in 3 seconds (attempt n. {attempt_number} out of 5).'
         )
         sleep(self.retry_delay)
+
+
+def check_metric_threshold(sender, metric, values, send_alert=True, **kwargs):
+    time = kwargs.get('time')
+    if isinstance(time, str):
+        time = datetime.strptime(kwargs.get('time'), '%Y-%m-%dT%H:%M:%S.%fZ')
+        time = pytz.utc.localize(time)
+    metric.check_threshold(
+        values[metric.field_name], time, kwargs.get('rp'), send_alert
+    )

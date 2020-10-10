@@ -249,10 +249,14 @@ class TestModels(TestMonitoringMixin, TestCase):
     def test_metric_post_write_signals_emitted(self):
         om = self._create_object_metric()
         with catch_signal(post_metric_write) as handler:
-            om.write(3)
+            time = start_time
+            om.write(3, time=time)
             handler.assert_called_once_with(
+                rp=None,
+                send_alert=True,
                 sender=Metric,
                 metric=om,
+                time=time.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                 values={om.field_name: 3},
                 signal=post_metric_write,
             )
@@ -290,17 +294,21 @@ class TestModels(TestMonitoringMixin, TestCase):
         )
         with self.subTest('within tolerance, no alerts expected'):
             m.write(99, time=timezone.now() - timedelta(minutes=2))
+            m.refresh_from_db()
             self.assertTrue(m.is_healthy)
             self.assertEqual(Notification.objects.count(), 0)
             m.write(99, time=timezone.now() - timedelta(minutes=4))
+            m.refresh_from_db()
             self.assertTrue(m.is_healthy)
             self.assertEqual(Notification.objects.count(), 0)
         with self.subTest('tolerance trepassed, alerts expected'):
             m.write(99, time=timezone.now() - timedelta(minutes=6))
+            m.refresh_from_db()
             self.assertFalse(m.is_healthy)
             self.assertEqual(Notification.objects.count(), 1)
         with self.subTest('value back to normal, tolerance not considered'):
             m.write(71, time=timezone.now() - timedelta(minutes=7))
+            m.refresh_from_db()
             self.assertTrue(m.is_healthy)
             self.assertEqual(Notification.objects.count(), 2)
 
