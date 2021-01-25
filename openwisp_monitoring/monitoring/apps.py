@@ -26,8 +26,9 @@ class MonitoringConfig(AppConfig):
             register_metric_notifications(metric_name, metric_config)
 
         register_dashboard_element(
-            'Monitoring Status',
-            {
+            position=0,
+            element_config={
+                'name': 'Monitoring Status',
                 'query_params': {
                     'app_label': 'config',
                     'model': 'device',
