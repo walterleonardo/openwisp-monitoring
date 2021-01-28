@@ -5,8 +5,6 @@ from django.conf import settings
 from django.utils.translation import gettext_lazy as _
 from requests.exceptions import ConnectionError
 
-from openwisp_utils.admin_theme import register_dashboard_element
-
 from ..db import timeseries_db
 from .configuration import get_metric_configuration, register_metric_notifications
 
@@ -24,24 +22,6 @@ class MonitoringConfig(AppConfig):
         metrics = get_metric_configuration()
         for metric_name, metric_config in metrics.items():
             register_metric_notifications(metric_name, metric_config)
-
-        register_dashboard_element(
-            position=0,
-            element_config={
-                'name': 'Monitoring Status',
-                'query_params': {
-                    'app_label': 'config',
-                    'model': 'device',
-                    'group_by': 'monitoring__status',
-                },
-                'colors': {
-                    'unknown': 'grey',
-                    'ok': 'green',
-                    'critical': 'orange',
-                    'problem': 'red',
-                },
-            },
-        )
 
     def create_database(self):
         # create Timeseries database if it doesn't exist yet
